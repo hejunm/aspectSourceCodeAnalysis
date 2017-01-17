@@ -16,12 +16,25 @@
 
 @implementation ViewController
 
-- (void)viewDidLoad {
-    [super viewDidLoad];
++ (void)load{
+    [UIViewController aspect_hookSelector:@selector(viewDidLoad) withOptions:AspectPositionBefore usingBlock:^(id<AspectInfo> info){
+        NSLog(@"viewDidLoad  before1");
+    } error:nil];
     
-    Car *car = [[Car alloc]init];
-    [car runTo:@"shangHai"];
+    [ViewController aspect_hookSelector:@selector(viewDidAppear:) withOptions:AspectPositionBefore usingBlock:^(id<AspectInfo> info){
+        NSLog(@"viewDidLoad  before1");
+    } error:nil];
+    
+    
     
 }
 
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    NSLog(@"ViewController viewDidLoad");
+}
+
+- (void)viewDidAppear:(BOOL)animated{
+    NSLog(@"ViewController viewDidAppear");
+}
 @end

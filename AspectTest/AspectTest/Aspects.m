@@ -261,7 +261,7 @@ static BOOL aspect_isMsgForwardIMP(IMP impl) {
     ;
 }
 
-/** 被hook的selector的实现 被替换为此函数的返回值。当执行这个selector时就会执行消息转发，这也就是手动触发消息转发*/
+/** 被hook的selector的imp 被替换为此函数的返回值。当执行这个selector时就会执行消息转发，这也就是手动触发消息转发*/
 static IMP aspect_getMsgForwardIMP(NSObject *self, SEL selector) {
     IMP msgForwardIMP = _objc_msgForward;
 #if !defined(__arm64__)
@@ -385,7 +385,7 @@ static Class aspect_hookClass(NSObject *self, NSError **error) {
 	Class baseClass = object_getClass(self);
 	NSString *className = NSStringFromClass(baseClass);
 
-    /** 当hook一个对象的selector时会生成一个子类，子类前缀就是AspectsSubclassSuffix。self对应的类就是生成的子类，直接返回*/
+    /** 当hook一个对象的selector时会生成一个子类，子类前缀就是AspectsSubclassSuffix。当self对应的类就是生成的子类，直接返回*/
     // Already subclassed
 	if ([className hasSuffix:AspectsSubclassSuffix]) {
 		return baseClass;
@@ -422,6 +422,7 @@ static Class aspect_hookClass(NSObject *self, NSError **error) {
 	return subclass;
 }
 
+/**method swizzling forwardInvocation。*/
 static NSString *const AspectsForwardInvocationSelectorName = @"__aspects_forwardInvocation:";
 static void aspect_swizzleForwardInvocation(Class klass) {
     NSCParameterAssert(klass);
@@ -507,6 +508,7 @@ for (AspectIdentifier *aspect in aspects) {\
     } \
 }
 
+/** 消息经过转发后都会来到这里（这里包括手动消息转发和自动消息转发）在这里进行统一的处理： 调用block，调用原方法实现*/
 // This is the swizzled forwardInvocation: method.
 static void __ASPECTS_ARE_BEING_CALLED__(__unsafe_unretained NSObject *self, SEL selector, NSInvocation *invocation) {
     NSCParameterAssert(self);
@@ -529,6 +531,7 @@ static void __ASPECTS_ARE_BEING_CALLED__(__unsafe_unretained NSObject *self, SEL
         aspect_invoke(classContainer.insteadAspects, info);
         aspect_invoke(objectContainer.insteadAspects, info);
     }else {
+        //没有Instead hooks时就执行selector 被hook之前的实现。
         Class klass = object_getClass(invocation.target);
         do {
             if ((respondsToAlias = [klass instancesRespondToSelector:aliasSelector])) {
@@ -542,10 +545,12 @@ static void __ASPECTS_ARE_BEING_CALLED__(__unsafe_unretained NSObject *self, SEL
     aspect_invoke(classContainer.afterAspects, info);
     aspect_invoke(objectContainer.afterAspects, info);
 
+    /**调用一个没有实现的selector会触发 自动消息转发，在这种情况下整个继承链中都不会响应aliasSelector也就导致respondsToAlias=false, 开始执行下面的方法*/
     // If no hooks are installed, call original implementation (usually to throw an exception)
     if (!respondsToAlias) {
         invocation.selector = originalSelector;
         SEL originalForwardInvocationSEL = NSSelectorFromString(AspectsForwardInvocationSelectorName);
+        // 如果实现了forwardInvocation,执行原来的消息转发，否则调用doesNotRecognizeSelector，抛出异常。
         if ([self respondsToSelector:originalForwardInvocationSEL]) {
             ((void( *)(id, SEL, NSInvocation *))objc_msgSend)(self, originalForwardInvocationSEL, invocation);
         }else {
